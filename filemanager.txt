@@ -1,0 +1,683 @@
+﻿/* filemanager.txt
+   Full Tree File Manager (CSS + HTML + JS) — hosted as plain-text JS and eval()'d by a small bootstrap.
+   Upload this file to a place that serves raw text with CORS (GitHub raw, Netlify, S3, etc.).
+   When fetched and eval()'d this script will build the app UI inside document.body.
+*/
+
+
+(function(){
+  // Insert CSS
+  const css = `:root{
+    --bg:#0f1724; --card:#0b1320; --muted:#9aa6b2; --accent:#60a5fa; --selected:#143e5a; --text:#e6eef6;
+  }
+  [data-theme="light"]{
+    --bg:#f7fafc; --card:#ffffff; --muted:#4b5563; --accent:#2563eb; --selected:#dbeafe; --text:#0b1220;
+  }
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg),#e6eef6);color:var(--text);font-family:ui-monospace, \"SFMono-Regular\", Menlo, Monaco, \"Roboto Mono\", monospace;}
+  #app{display:grid;grid-template-rows:1fr 220px;gap:8px;height:100vh;padding:12px;box-sizing:border-box;}
+  .top{display:flex;gap:12px;height:100%;}
+  .tree-panel{flex:1;background:linear-gradient(180deg,var(--card),#f0f6fb);border-radius:8px;padding:12px;overflow:auto;box-shadow:0 8px 30px rgba(1,6,12,0.06);}
+  .controls{width:360px;background:linear-gradient(180deg,var(--card),#f7fbff);border-radius:8px;padding:12px;overflow:auto;box-shadow:0 8px 30px rgba(1,6,12,0.06);min-width:220px;max-width:42%;}
+  .toolbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  button{background:transparent;border:1px solid rgba(0,0,0,0.06);color:var(--text);padding:6px 8px;border-radius:6px;cursor:pointer;}
+  button.small{padding:4px 6px;font-size:13px}
+  .tree{white-space:pre;font-size:14px;line-height:1.5;user-select:none;}
+  .node{padding:6px 8px;border-radius:6px;display:flex;align-items:center;gap:8px;}
+  .node:hover{background:rgba(0,0,0,0.03)}
+  .node.selected{background:linear-gradient(90deg,var(--selected),#e3f2fd);box-shadow:inset 0 0 0 1px rgba(0,0,0,0.03);}
+  .node .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .node .meta{font-size:12px;color:var(--muted)}
+  .bottom-panel{background:linear-gradient(180deg,var(--card),#f7fbff);border-radius:8px;padding:12px;display:flex;gap:12px;align-items:flex-start;overflow:auto;flex-wrap:wrap}
+  .card{background:linear-gradient(180deg,#ffffff,#fbfdff);padding:10px;border-radius:8px;width:100%;box-shadow:0 10px 30px rgba(2,6,12,0.03);border:1px solid rgba(0,0,0,0.04)}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+  input[type=\"text\"], textarea, select{width:100%;padding:8px;border-radius:6px;border:1px solid rgba(0,0,0,0.06);background:transparent;color:var(--text);box-sizing:border-box;font-family:inherit}
+  textarea{height:120px;resize:vertical}
+  .muted{color:var(--muted);font-size:13px}
+  .small{font-size:13px;padding:6px}
+  .hint{font-size:12px;color:var(--muted);margin-top:6px}
+  .row{display:flex;gap:8px}
+  .row > *{flex:1}
+  .danger{background:#fee2e2}
+  .ok{background:#ecfdf5}
+  .file-attach{display:flex;gap:6px;align-items:center}
+  .link{color:var(--accent);cursor:pointer;text-decoration:underline}
+  .hidden{display:none}
+  .folder-crumbs{font-size:13px;color:var(--muted);margin-bottom:8px}
+  .node .drag-handle{width:18px;text-align:center;opacity:0.6;user-select:none}
+  .drop-target{outline:2px dashed var(--accent);border-radius:6px}
+  @media (max-width:700px){
+    .top{flex-direction:column}
+    .controls{width:100%;max-width:none;order:2}
+    .tree-panel{order:1}
+    #app{grid-template-rows:1fr auto 1fr}
+    .bottom-panel{flex-direction:column}
+  }`;
+  const style = document.createElement('style');
+  style.textContent = css;
+  document.head.appendChild(style);
+
+
+  // Insert HTML skeleton
+  const html = `
+  <div id="app" data-theme="">
+    <div class="top">
+      <div class="tree-panel card" id="treePanel" aria-label="Tree">
+        <div class="toolbar">
+          <button id="btnAddItem" class="small">+ Item</button>
+          <button id="btnUploadFilesBtn" class="small">Upload Files</button>
+          <button id="btnUploadFolderBtn" class="small">Upload Folder</button>
+          <button id="btnExport" class="small">Export ZIP</button>
+          <button id="btnToggleShowIds" class="small">Toggle IDs</button>
+          <button id="btnToggleTheme" class="small">Light/Dark</button>
+        </div>
+
+
+        <div class="muted" style="margin-bottom:8px">Tree (drag items to move; touch-drag on mobile; Ctrl/Cmd to multi-select; Shift-click for range)</div>
+
+
+        <div id="tree" class="tree" tabindex="0"></div>
+      </div>
+
+
+      <div class="controls card">
+        <div class="folder-crumbs" id="breadcrumb">Selected: <span id="selCount">0</span></div>
+
+
+        <div id="panelSingle" class="">
+          <label>Rename / Pattern (supports [[n]], [[n:03]], [[date]])</label>
+          <input id="singleName" type="text" placeholder="Name or pattern" />
+
+
+          <div style="margin-top:8px" class="file-attach">
+            <input id="fileUpload" type="file" />
+            <button id="btnSaveSingle" class="small">Attach File</button>
+            <button id="btnRenameSingle" class="small">Rename</button>
+          </div>
+
+
+          <div style="margin-top:8px">
+            <label>Content (text for files)</label>
+            <textarea id="fileContent" placeholder="File content (text)"></textarea>
+            <div class="hint">Tip: Attach files (binary or text) with the Attach button. Upload folder/files buttons are in the toolbar.</div>
+          </div>
+
+
+          <div style="margin-top:8px" class="row">
+            <button id="btnDeleteSingle" class="small danger">Delete (and children)</button>
+            <button id="btnDeleteSingleKeep" class="small">Delete & keep children</button>
+          </div>
+
+
+          <div style="margin-top:8px" class="row">
+            <button id="btnConvertToFolder" class="small">Convert to folder</button>
+            <button id="btnDownloadContent" class="small">Download content</button>
+          </div>
+        </div>
+
+
+        <div id="panelMulti" class="hidden">
+          <label>Mass rename pattern (use [[n]])</label>
+          <input id="multiPattern" type="text" placeholder="Pattern e.g. Image_[[n:03]]" />
+          <div class="row" style="margin-top:8px">
+            <input id="multiStart" type="text" placeholder="start (1)" value="1" />
+            <input id="multiStep" type="text" placeholder="step (1)" value="1" />
+          </div>
+
+
+          <label style="margin-top:8px">Mass operations</label>
+          <div class="row" style="margin-top:6px">
+            <button id="btnMassRename" class="small">Mass Rename</button>
+            <button id="btnMassDelete" class="small danger">Delete</button>
+          </div>
+
+
+          <div style="margin-top:8px">
+            <label>Move selected to folder</label>
+            <select id="moveTarget"></select>
+            <div style="margin-top:6px" class="row">
+              <button id="btnMassMove" class="small">Move</button>
+              <button id="btnMassMoveHere" class="small">Move Here (drop target)</button>
+            </div>
+          </div>
+        </div>
+
+
+        <div style="margin-top:12px" class="muted">Tips: Use [[n]] in patterns. Click an item then "Move" to move selected items there. Drag & drop supports reparenting and reordering. An item with children acts as a folder.</div>
+      </div>
+    </div>
+
+
+    <div class="bottom-panel">
+      <div class="card" style="max-width:520px">
+        <h3>Data / Debug</h3>
+        <div class="muted">JSON snapshot of the tree. Binary content shows as a placeholder (can't serialize blobs).</div>
+        <textarea id="jsonOut" style="height:140px;font-family:monospace"></textarea>
+        <div style="margin-top:8px" class="row">
+          <button id="btnCopyJson" class="small">Copy JSON</button>
+          <button id="btnLoadJson" class="small">Load JSON</button>
+        </div>
+      </div>
+
+
+      <div class="card" style="max-width:420px">
+        <h3>Selection Info</h3>
+        <div id="selectionInfo" class="muted">No selection.</div>
+        <div style="margin-top:8px" class="row">
+          <button id="btnExpandAll" class="small">Expand All</button>
+          <button id="btnCollapseAll" class="small">Collapse All</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- hidden inputs for uploads -->
+  <input id="multiFileInput" type="file" multiple class="hidden" />
+  <input id="folderInput" type="file" webkitdirectory directory multiple class="hidden" />
+  `;
+  document.body.insertAdjacentHTML('afterbegin', html);
+
+
+  // load libraries (JSZip + FileSaver) via CDN for export functionality
+  // insert script tags only if not already present
+  function addScriptOnce(src, onload){
+    if(document.querySelector('script[src="'+src+'"]')) { if(onload) onload(); return; }
+    const s = document.createElement('script'); s.src = src; s.onload = onload; s.async = false; document.head.appendChild(s);
+  }
+
+
+  // Promise to wait for libs
+  const libsLoaded = new Promise((res)=>{
+    addScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', ()=>{
+      addScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js', ()=> res());
+    });
+  });
+
+
+  // Main app logic (same functionality as previously discussed)
+  libsLoaded.then(()=>{
+
+
+    // small helpers
+    const appEl = document.getElementById('app');
+    const state = {
+      nodes: {}, rootIds: [], selected: [], showIds: false, expanded: new Set(), touchDrag: {active:false, id:null, currentTargetId:null, elem:null}, theme: localStorage.getItem('tfm_theme') || 'dark'
+    };
+    let idCounter = 1;
+    function genId(){ return 'n'+(idCounter++); }
+    function makeNode({name='New', parent=null, content=null}){ const id = genId(); state.nodes[id] = { id, name, parent, children: [], content: content || null, meta:{} }; if(parent==null) state.rootIds.push(id); else state.nodes[parent].children.push(id); return state.nodes[id]; }
+    function findNode(id){ return state.nodes[id] || null; }
+    function removeFromParent(id){ const node = findNode(id); if(!node) return; const p = node.parent; const list = p ? state.nodes[p].children : state.rootIds; const idx = list.indexOf(id); if(idx>=0) list.splice(idx,1); node.parent = null; }
+    function insertIntoParentAt(id, parentId, index=null){ const node = findNode(id); if(!node) return; removeFromParent(id); node.parent = parentId; const list = parentId ? state.nodes[parentId].children : state.rootIds; if(index==null) list.push(id); else list.splice(index,0,id); }
+    function preorderList(){ const out=[]; (function rec(list){ for(const id of list){ out.push(id); const node = state.nodes[id]; if(node.children && node.children.length) rec(node.children); } })(state.rootIds); return out; }
+
+
+    // Elements
+    const treeEl = document.getElementById('tree');
+    const jsonOut = document.getElementById('jsonOut');
+    const selectionInfo = document.getElementById('selectionInfo');
+
+
+    function escapeName(name){ return String(name).replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+
+    function render(){
+      treeEl.innerHTML = '';
+      function renderList(list, prefix=''){
+        list.forEach((id, i) => {
+          const node = state.nodes[id];
+          const isLast = i === list.length-1;
+          const treePrefix = prefix + (prefix ? (isLast ? '└─ ' : '├─ ') : '');
+          const row = document.createElement('div');
+          row.className = 'node';
+          if(state.selected.includes(id)) row.classList.add('selected');
+          row.draggable = true;
+          row.dataset.id = id;
+
+
+          const drag = document.createElement('div');
+          drag.className = 'drag-handle';
+          drag.textContent = '≡';
+          row.appendChild(drag);
+
+
+          const nameWrap = document.createElement('div');
+          nameWrap.style.display = 'flex';
+          nameWrap.style.alignItems = 'center';
+          nameWrap.style.gap = '8px';
+          nameWrap.style.flex = '1';
+
+
+          const lead = document.createElement('div');
+          lead.style.width = '12ch';
+          lead.className = 'meta';
+          lead.textContent = treePrefix;
+          nameWrap.appendChild(lead);
+
+
+          const name = document.createElement('div');
+          name.className = 'name';
+          name.innerHTML = (state.showIds ? '['+id+'] ' : '') + escapeName(node.name);
+          nameWrap.appendChild(name);
+
+
+          const meta = document.createElement('div');
+          meta.className = 'meta';
+          const isFolder = node.children && node.children.length>0;
+          meta.textContent = isFolder ? 'folder' : (node.content ? 'file' : 'item');
+          nameWrap.appendChild(meta);
+
+
+          row.appendChild(nameWrap);
+
+
+          row.addEventListener('click', (ev)=>{ ev.stopPropagation(); handleSelectionClick(id, ev); });
+          row.addEventListener('dblclick', (ev)=>{ ev.stopPropagation(); if(isFolder){ toggleExpanded(id); render(); } else { openEditFor(id); }});
+
+
+          row.addEventListener('dragstart', (ev)=>{ ev.dataTransfer.setData('text/node-id', id); });
+          row.addEventListener('dragover', (ev)=>{ ev.preventDefault(); });
+          row.addEventListener('drop', (ev)=>{ ev.preventDefault(); const dragged = ev.dataTransfer.getData('text/node-id'); if(!dragged) return; const isAbove = ev.offsetY < row.clientHeight/2; handleDrop(dragged, id, isAbove); });
+
+
+          // touch for mobile
+          row.addEventListener('touchstart', (ev)=>{ if(ev.touches.length>1) return; state.touchDrag.active = true; state.touchDrag.id = id; state.touchDrag.elem = row; row.classList.add('selected'); }, {passive:true});
+          row.addEventListener('touchmove', (ev)=>{ if(!state.touchDrag.active) return; const t = ev.touches[0]; const el = document.elementFromPoint(t.clientX, t.clientY); clearDropHighlights(); const nodeEl = findAncestorNodeElement(el); if(nodeEl){ nodeEl.classList.add('drop-target'); state.touchDrag.currentTargetId = nodeEl.dataset.id; } else state.touchDrag.currentTargetId = null; }, {passive:true});
+          row.addEventListener('touchend', (ev)=>{ if(!state.touchDrag.active) return; const draggedId = state.touchDrag.id; const targetId = state.touchDrag.currentTargetId; clearDropHighlights(); state.touchDrag.active = false; state.touchDrag.id = null; const target = targetId || null; if(target && target!==draggedId){ const targetNode = findNode(target); const isFolder2 = targetNode.children && targetNode.children.length>0; if(isFolder2) moveNodes([draggedId], target, null); else { const parent = targetNode.parent; const list = parent ? state.nodes[parent].children : state.rootIds; const pos = list.indexOf(target) + 1; moveNodes([draggedId], parent, pos); } } else render(); });
+
+
+          const actions = document.createElement('div');
+          actions.style.display='flex';
+          actions.style.gap='6px';
+          actions.style.marginLeft='8px';
+
+
+          const btnRename = document.createElement('button');
+          btnRename.className = 'small';
+          btnRename.textContent = '✏';
+          btnRename.title = 'Rename';
+          btnRename.addEventListener('click',(e)=>{ e.stopPropagation(); openRename(id); });
+          actions.appendChild(btnRename);
+
+
+          const btnAddChild = document.createElement('button');
+          btnAddChild.className = 'small';
+          btnAddChild.textContent = '+';
+          btnAddChild.title = 'Add child';
+          btnAddChild.addEventListener('click',(e)=>{ e.stopPropagation(); addNode(id); });
+          actions.appendChild(btnAddChild);
+
+
+          row.appendChild(actions);
+
+
+          treeEl.appendChild(row);
+
+
+          if(isFolder && state.expanded.has(id)){
+            renderList(node.children, prefix + (isLast ? '   ' : '│  '));
+          }
+        });
+      }
+      renderList(state.rootIds);
+
+
+      jsonOut.value = JSON.stringify(dumpTree(), null, 2);
+      updatePanels();
+    }
+
+
+    function clearDropHighlights(){ document.querySelectorAll('.drop-target').forEach(el=>el.classList.remove('drop-target')); }
+    function findAncestorNodeElement(el){ while(el && el!==document.body){ if(el.dataset && el.dataset.id) return el; el = el.parentElement; } return null; }
+
+
+    function dumpTree(){
+      function nodeToObj(id){
+        const n = state.nodes[id];
+        const out = { id: n.id, name: n.name };
+        if(n.content){
+          if(typeof n.content === 'string') out.content = n.content;
+          else if(n.content instanceof Blob) out.content = { __blob: true, size: n.content.size, type: n.content.type || 'binary' };
+          else out.content = { __unknown: true };
+        }
+        if(n.children && n.children.length) out.children = n.children.map(nodeToObj);
+        return out;
+      }
+      return state.rootIds.map(nodeToObj);
+    }
+
+
+    function handleSelectionClick(id, ev){
+      const metaKey = ev.ctrlKey || ev.metaKey;
+      if(ev.shiftKey && state.selected.length>0){
+        const list = preorderList();
+        const last = state.selected[state.selected.length-1];
+        const i1 = list.indexOf(last);
+        const i2 = list.indexOf(id);
+        if(i1>=0 && i2>=0){
+          const [a,b] = i1<i2 ? [i1,i2] : [i2,i1];
+          const slice = list.slice(a,b+1);
+          state.selected = Array.from(new Set(state.selected.concat(slice)));
+          render();
+          return;
+        }
+      }
+      if(metaKey){
+        if(state.selected.includes(id)) state.selected = state.selected.filter(x=>x!==id);
+        else state.selected.push(id);
+      } else {
+        state.selected = [id];
+      }
+      render();
+    }
+
+
+    function toggleExpanded(id){ if(state.expanded.has(id)) state.expanded.delete(id); else state.expanded.add(id); }
+
+
+    function addNode(parentId=null, name=null, content=null){ if(!name) name = 'New Item'; const node = makeNode({name, parent: parentId, content}); if(parentId) state.expanded.add(parentId); state.selected = [node.id]; render(); setTimeout(()=> openEditFor(node.id), 40); return node; }
+
+
+    function openEditFor(id){ state.selected = [id]; render(); const node = findNode(id); document.getElementById('singleName').value = node.name; const fileContentEl = document.getElementById('fileContent'); if(node.content instanceof Blob){ const reader = new FileReader(); reader.onload = (e)=>{ try { fileContentEl.value = e.target.result; } catch(e){ fileContentEl.value = ''; } }; reader.readAsText(node.content); } else fileContentEl.value = node.content || ''; }
+
+
+    function openRename(id){ const node = findNode(id); const newName = prompt('Rename', node.name); if(newName!=null) { node.name = newName; render(); } }
+
+
+    function deleteNode(id, opts={keepChildren:false}){ const node = findNode(id); if(!node) return; const parent = node.parent; const parentList = parent ? state.nodes[parent].children : state.rootIds; const index = parentList.indexOf(id); if(opts.keepChildren){ const children = node.children.slice(); children.forEach(childId => { insertIntoParentAt(childId, parent, index++); }); } else { function recDelete(nid){ const n = findNode(nid); if(!n) return; const kids = n.children.slice(); kids.forEach(recDelete); delete state.nodes[nid]; state.selected = state.selected.filter(x=>x!==nid); } recDelete(id); } removeFromParent(id); delete state.nodes[id]; state.selected = state.selected.filter(x=>x!==id); render(); }
+
+
+    function moveNodes(ids, targetParentId, index=null){ const banned = new Set(); function markDescendants(id){ banned.add(id); const node = findNode(id); for(const c of node.children) markDescendants(c); } ids.forEach(markDescendants); for(const id of ids){ if(banned.has(targetParentId) && targetParentId!=null){ console.warn('Skipping move of', id, 'into its descendant', targetParentId); continue; } insertIntoParentAt(id, targetParentId, index); if(index!=null) index++; } render(); }
+
+
+    function handleDrop(draggedId, targetId, insertAbove){ const dragged = findNode(draggedId); if(!dragged) return; let toMove = [draggedId]; if(state.selected.includes(draggedId) && state.selected.length>1) toMove = state.selected.slice(); const target = findNode(targetId); if(!target) return; const isFolder = target.children && target.children.length>0; if(isFolder){ const idx = insertAbove ? 0 : null; moveNodes(toMove, targetId, idx); } else { const parent = target.parent; const list = parent ? state.nodes[parent].children : state.rootIds; const pos = list.indexOf(targetId) + (insertAbove ? 0 : 1); moveNodes(toMove, parent, pos); } }
+
+
+    // pattern helpers using [[n]] ... but for host safety these are just UI tokens; they live in remote .txt so no host parsing here
+    function formatPatternSimple(pattern, idx, start){
+      const n = start + idx; const date = (new Date()).toISOString().slice(0,10);
+      const tokenOpen = '[['; const tokenClose = ']]';
+      let out = ''; let i=0;
+      while(i < pattern.length){
+        const pos = pattern.indexOf(tokenOpen, i);
+        if(pos === -1){ out += pattern.slice(i); break; }
+        out += pattern.slice(i, pos);
+        const end = pattern.indexOf(tokenClose, pos + tokenOpen.length);
+        if(end === -1){ out += pattern.slice(pos); break; }
+        const inner = pattern.slice(pos + tokenOpen.length, end);
+        if(inner === 'date'){ out += date; }
+        else if(inner.startsWith('n')){
+          const m = inner.match(/^n(?::(\\d+))?$/);
+          if(m){
+            const pad = m[1];
+            if(pad) out += String(n).padStart(parseInt(pad,10), '0'); else out += String(n);
+          } else out += tokenOpen + inner + tokenClose;
+        } else out += tokenOpen + inner + tokenClose;
+        i = end + tokenClose.length;
+      }
+      return out;
+    }
+
+
+    function massRename(ids, pattern, start=1, step=1){ for(let i=0, cur=start; i<ids.length; i++, cur+=step){ state.nodes[ids[i]].name = formatPatternSimple(pattern, i, start); } render(); }
+
+
+    // ZIP export
+    async function exportZip(){
+      if(typeof JSZip === 'undefined' || typeof saveAs === 'undefined'){ alert('ZIP libs not loaded.'); return; }
+      const zip = new JSZip();
+      async function addNodeToZip(id, folder){
+        const n = state.nodes[id];
+        const isFolder = n.children && n.children.length>0;
+        if(isFolder){
+          const sub = folder.folder(n.name);
+          for(const cid of n.children) await addNodeToZip(cid, sub);
+        } else {
+          const fname = n.name || 'file';
+          if(n.content instanceof Blob) folder.file(fname, n.content);
+          else folder.file(fname, n.content || '');
+        }
+      }
+      for(const id of state.rootIds) await addNodeToZip(id, zip);
+      const blob = await zip.generateAsync({type:'blob'});
+      saveAs(blob, 'tree-export.zip');
+    }
+
+
+    function buildFolderSelect(selectEl){
+      selectEl.innerHTML = '';
+      const optRoot = document.createElement('option'); optRoot.value=''; optRoot.textContent='(root)'; selectEl.appendChild(optRoot);
+      function rec(list, prefix=''){
+        for(const id of list){
+          const n = state.nodes[id];
+          if(n.children && n.children.length){
+            const o = document.createElement('option');
+            o.value = id;
+            o.textContent = prefix + n.name;
+            selectEl.appendChild(o);
+            rec(n.children, prefix + '  ');
+          }
+        }
+      }
+      rec(state.rootIds);
+    }
+
+
+    // UI wiring
+    document.getElementById('btnAddItem').addEventListener('click', ()=> addNode(null));
+    document.getElementById('btnToggleShowIds').addEventListener('click', ()=> { state.showIds = !state.showIds; render(); });
+    document.getElementById('btnExport').addEventListener('click', ()=> exportZip());
+
+
+    document.getElementById('btnCopyJson')?.addEventListener('click', ()=>{ navigator.clipboard.writeText(jsonOut.value); alert('JSON copied'); });
+    document.getElementById('btnLoadJson')?.addEventListener('click', ()=>{
+      try{
+        const data = JSON.parse(jsonOut.value);
+        state.nodes = {}; state.rootIds = []; state.selected = []; idCounter = 1;
+        (function rec(list,parent){
+          list.forEach(item=>{
+            const id = item.id || genId();
+            const m = id.match(/^n(\\d+)$/);
+            if(m) idCounter = Math.max(idCounter, parseInt(m[1])+1);
+            state.nodes[id] = { id, name:item.name, parent, children: [], content: typeof item.content === 'string' ? item.content : null };
+            if(parent==null) state.rootIds.push(id); else state.nodes[parent].children.push(id);
+            if(item.children) rec(item.children, id);
+          });
+        })(data, null);
+        render();
+      }catch(e){ alert('Invalid JSON: '+e.message); }
+    });
+
+
+    document.getElementById('btnExpandAll').addEventListener('click', ()=>{ for(const id in state.nodes) if(state.nodes[id].children && state.nodes[id].children.length) state.expanded.add(id); render(); });
+    document.getElementById('btnCollapseAll').addEventListener('click', ()=>{ state.expanded.clear(); render(); });
+
+
+    // uploads
+    const multiFileInput = document.getElementById('multiFileInput');
+    const folderInput = document.getElementById('folderInput');
+    document.getElementById('btnUploadFilesBtn').addEventListener('click', ()=> multiFileInput.click());
+    document.getElementById('btnUploadFolderBtn').addEventListener('click', ()=> folderInput.click());
+
+
+    multiFileInput.addEventListener('change', async (ev)=>{
+      const files = Array.from(ev.target.files || []);
+      if(files.length===0) return;
+      const target = (state.selected.length===1 ? state.selected[0] : null);
+      for(const f of files){
+        const contentBlob = f.slice(0,f.size,f.type);
+        if(target) addNode(target, f.name, contentBlob); else addNode(null, f.name, contentBlob);
+      }
+      ev.target.value = '';
+    });
+
+
+    folderInput.addEventListener('change', async (ev)=>{
+      const files = Array.from(ev.target.files || []);
+      if(files.length===0) return;
+      const rootParent = (state.selected.length===1 ? state.selected[0] : null);
+      for(const f of files){
+        const rel = f.webkitRelativePath || f.name;
+        const parts = rel.split('/');
+        let parent = rootParent;
+        for(let i=0;i<parts.length;i++){
+          const part = parts[i];
+          const isFile = (i === parts.length -1);
+          if(isFile){
+            const contentBlob = f.slice(0,f.size,f.type);
+            addNode(parent, part, contentBlob);
+          } else {
+            const existing = (parent ? state.nodes[parent].children : state.rootIds).map(id=>state.nodes[id]).find(n=>n.name===part);
+            if(existing) parent = existing.id;
+            else { const newDir = makeNode({name: part, parent}); if(parent) state.expanded.add(parent); parent = newDir.id; }
+          }
+        }
+      }
+      ev.target.value = '';
+      render();
+    });
+
+
+    document.getElementById('btnSaveSingle').addEventListener('click', ()=>{
+      if(state.selected.length!==1) return alert('Select one item.');
+      const id = state.selected[0]; const n = state.nodes[id];
+      const fileInput = document.getElementById('fileUpload');
+      if(fileInput.files.length){
+        const f = fileInput.files[0];
+        n.content = f.slice(0,f.size,f.type);
+        fileInput.value = '';
+        render();
+      } else {
+        alert('Choose a file to upload or paste text content.');
+      }
+    });
+
+
+    document.getElementById('btnRenameSingle').addEventListener('click', ()=>{
+      if(state.selected.length!==1) return alert('Select one item.');
+      const id = state.selected[0];
+      const pattern = document.getElementById('singleName').value.trim();
+      const node = state.nodes[id];
+      if(pattern) node.name = formatPatternSimple(pattern, 0, 1);
+      const txt = document.getElementById('fileContent').value;
+      if(txt && txt.length>0) node.content = txt;
+      render();
+    });
+
+
+    document.getElementById('btnDeleteSingle').addEventListener('click', ()=>{
+      if(state.selected.length!==1) return alert('Select one item.');
+      if(!confirm('Delete the selected item and ALL its children?')) return;
+      deleteNode(state.selected[0], {keepChildren:false});
+    });
+    document.getElementById('btnDeleteSingleKeep').addEventListener('click', ()=>{
+      if(state.selected.length!==1) return alert('Select one item.');
+      if(!confirm('Delete the item but move its children up to its parent?')) return;
+      deleteNode(state.selected[0], {keepChildren:true});
+    });
+
+
+    document.getElementById('btnConvertToFolder').addEventListener('click', ()=>{
+      if(state.selected.length!==1) return alert('Select one item.');
+      const id = state.selected[0]; const node = state.nodes[id];
+      if(node.children && node.children.length>0){ return alert('Already a folder (has children)'); }
+      const content = node.content;
+      if(!content){ node.children = []; node.content = null; return render(); }
+      let childName = 'index';
+      const m = node.name.match(/(.+)(\\.[a-z0-9]+)$/i);
+      if(m){ childName = 'index' + m[2]; }
+      const child = makeNode({name: childName, parent: id, content: content});
+      node.content = null; state.expanded.add(id); render();
+    });
+
+
+    document.getElementById('btnDownloadContent').addEventListener('click', ()=>{
+      if(state.selected.length!==1) return alert('Select one item.');
+      const id = state.selected[0]; const node = state.nodes[id];
+      if(!node.content){ return alert('No content to download'); }
+      if(node.content instanceof Blob){ saveAs(node.content, node.name || 'file'); }
+      else { const b = new Blob([String(node.content)], {type:'text/plain'}); saveAs(b, node.name || 'file.txt'); }
+    });
+
+
+    document.getElementById('btnMassRename').addEventListener('click', ()=>{
+      if(state.selected.length<1) return alert('Select items to mass rename.');
+      const pattern = document.getElementById('multiPattern').value.trim();
+      const start = parseInt(document.getElementById('multiStart').value || '1',10);
+      const step = parseInt(document.getElementById('multiStep').value || '1',10);
+      if(!pattern) return alert('Enter a pattern using [[n]]');
+      const ids = state.selected.slice();
+      for(let i=0, cur=start; i<ids.length; i++, cur+=step) state.nodes[ids[i]].name = formatPatternSimple(pattern, i, start);
+      render();
+    });
+
+
+    document.getElementById('btnMassDelete').addEventListener('click', ()=>{
+      if(state.selected.length<1) return alert('Select items to delete.');
+      if(!confirm('Delete selected items and their children?')) return;
+      const ids = state.selected.slice();
+      ids.forEach(id=>{ if(state.nodes[id]) deleteNode(id, {keepChildren:false}); });
+      render();
+    });
+
+
+    document.getElementById('btnMassMove').addEventListener('click', ()=>{
+      if(state.selected.length<1) return alert('Select items to move.');
+      const sel = document.getElementById('moveTarget').value || null;
+      moveNodes(state.selected.slice(), sel);
+    });
+
+
+    const moveTargetSel = document.getElementById('moveTarget');
+    function refreshMoveTargets(){ buildFolderSelect(moveTargetSel); }
+    setInterval(refreshMoveTargets, 1500);
+
+
+    function updatePanels(){
+      const selCount = state.selected.length;
+      document.getElementById('selCount').textContent = selCount;
+      if(selCount===1){
+        document.getElementById('panelSingle').classList.remove('hidden');
+        document.getElementById('panelMulti').classList.add('hidden');
+        const id = state.selected[0];
+        const n = state.nodes[id];
+        document.getElementById('singleName').value = n.name;
+        const fileContentEl = document.getElementById('fileContent');
+        if(n.content instanceof Blob){
+          const reader = new FileReader();
+          reader.onload = (e)=>{ try { fileContentEl.value = e.target.result; } catch(e){ fileContentEl.value = ''; } };
+          reader.readAsText(n.content);
+        } else fileContentEl.value = n.content || '';
+        document.getElementById('selectionInfo').textContent = `Selected: ${n.name} id=${n.id}`;
+      } else if(selCount>1){
+        document.getElementById('panelSingle').classList.add('hidden');
+        document.getElementById('panelMulti').classList.remove('hidden');
+        document.getElementById('selectionInfo').textContent = `Selected ${selCount} items`;
+      } else {
+        document.getElementById('panelSingle').classList.remove('hidden');
+        document.getElementById('panelMulti').classList.add('hidden');
+        document.getElementById('singleName').value = '';
+        document.getElementById('fileContent').value = '';
+        document.getElementById('selectionInfo').textContent = `No selection`;
+      }
+    }
+
+
+    window.addEventListener('keydown',(ev)=>{ if((ev.ctrlKey||ev.metaKey) && ev.key.toLowerCase()==='a'){ ev.preventDefault(); state.selected = Object.keys(state.nodes); render(); } });
+
+
+    // uploads via hidden inputs already in DOM
+    // theme handling
+    const themeBtn = document.getElementById('btnToggleTheme');
+    function applyTheme(){ const t = state.theme === 'light' ? 'light' : 'dark'; document.body.style.color = 'var(--text)'; appEl.setAttribute('data-theme', t); localStorage.setItem('tfm_theme', t); }
+    themeBtn.addEventListener('click', ()=>{ state.theme = (state.theme === 'light') ? 'dark' : 'light'; applyTheme(); });
+    applyTheme();
+
+
+    function seedDemo(){ const a = makeNode({name:'Documents'}); const f1 = makeNode({name:'notes.txt', parent:a.id, content:'These are notes.'}); const f2 = makeNode({name:'todo.txt', parent:a.id, content:'- buy milk\n- write code'}); const b = makeNode({name:'Images'}); const i1 = makeNode({name:'img_[[n:03]].png', parent:b.id, content:''}); const rootFile = makeNode({name:'readme.md', content:'# Readme'}); state.expanded.add(a.id); state.expanded.add(b.id); }
+    seedDemo();
+    render();
+
+
+  }); // end libsLoaded.then
+})();
