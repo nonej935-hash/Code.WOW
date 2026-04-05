@@ -1,0 +1,37 @@
+{
+  "characters": [
+    {
+      "key": "chad",
+      "name": "Chad",
+      "title": "The Mysterious Bad Boy",
+      "emoji": "🧢",
+      "color": "#7F77DD",
+      "colorLight": "#EEEDFE",
+      "colorDark": "#3C3489",
+      "bio": "He smells like Axe body spray and broken promises. Microwaves fish every Tuesday. Won't say why.",
+      "personality": "mysteriously brooding, speaks in fragments, thinks microwaving fish is a personality, considers himself profoundly deep, never finishes his sentences, stares into the middle distance constantly"
+    },
+    {
+      "key": "sebastian",
+      "name": "Sebastian",
+      "title": "The Brooding Vampire",
+      "emoji": "🌹",
+      "color": "#D4537E",
+      "colorLight": "#FBEAF0",
+      "colorDark": "#72243E",
+      "bio": "Claims to be 400 years old. Allergic to sunlight, garlic, cats, pollen, gluten, and eye contact.",
+      "personality": "dramatically brooding vampire who keeps sneezing and being allergic to everything, extremely sensitive about his dignity, insists everything he does is still threatening even when it clearly is not, speaks in overwrought gothic prose"
+    },
+    {
+      "key": "kenji",
+      "name": "Kenji",
+      "title": "The Competitive Eating Champion",
+      "emoji": "🐟",
+      "color": "#1D9E75",
+      "colorLight": "#E1F5EE",
+      "colorDark": "#085041",
+      "bio": "Always smiling. Holds the regional record for hot dogs. Will absolutely propose at a buffet.",
+      "personality": "relentlessly and aggressively cheerful, brings up competitive eating constantly, physically incapable of being sad, treats every romantic moment as an opportunity to mention food records, proposes solutions to emotional problems through eating challenges"
+    }
+  ]
+}
