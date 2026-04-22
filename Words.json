@@ -1,7 +1,9 @@
 {
   [
   {"word":"yellow", "isNoun":"none"},
+  {"word":"skies", "isNoun":"plural"},
+  {"word":"toothpaste", "isNoun":"compound"},
   {"word":"see", "isNoun":false},
-  {"word":"obey", "isNoun":false},
+  {"word":"obey", "isNoun":false}
   ]
 }
